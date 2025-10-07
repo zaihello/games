@@ -3,9 +3,310 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>記憶配對遊戲</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .card-wrapper {
+            width:100px;
+            height:100px;
+            position:relative;
+            transform-style:preserve-3d;
+            transition:transform 0.5s;
+            cursor:pointer;
+            border-radius:8px;
+        }
+        .card-wrapper.flipped {
+            transform:rotateY(180deg);
+        }
+        .card-wrapper.matched {
+            opacity:0.5;
+            /* 配對成功後，卡片永遠不能再被點擊 */
+            pointer-events:none;
+        }
+        .card-face {
+            position:absolute;
+            width: 100%;
+            height:100%;
+            backface-visibility:hidden;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            border-radius:8px;
+            font-size:40px;
+            font-weight:bold;
+        }  
+        /* 卡片背面顏色 */
+        .back-face {
+            background-color:deepskyblue;
+            color:aliceblue;
+        } 
+        /* 卡片正面顏色 */ 
+        .front-face {
+            background-color:chartreuse;
+            transform:rotateY(180deg);
+        }
+    </style>
 </head>
 <body>
+<div class="max-w-lg m-auto mt-10 bg-blue-500 p-6"> 
+    <h1 class="text-center text-2xl font-bold">記憶配對遊戲</h1>
+    <div class="flex justify-between my-5">
+        <div id="timerDisplay"></div>
+        <button id="restartButton" class="border rounded ring-2 ring-white p-2 hover:bg-blue-800 hover:text-white transition duration-500 font-bold text-xl">重新開始</button>   
+    </div>
+    <div class="flex justify-center">
+        <div id="container"></div>
+    </div>
+    <div class="">
+        <p id="message" class="text-red-500 text-lg font-bold text-center bg-white mt-6"></p> 
+    </div>
+</div>  
+
+<script>
+    const symbols = ['🍎', '🍌', '🥝', '🍉', '🍇', '🍍', '🍓', '🍋']
+    const cardSymbols = symbols.flatMap(symbol => [symbol,symbol])
+    const container = document.getElementById('container')
+    container.classList.add("grid","grid-cols-4","gap-4")
+   
+    let shuffledSymbols = []//轉換格式後的隨機牌
+    let isGameLocked = false//鎖定所有卡片的點擊輸入，在玩家翻開第二張牌後、等待結果的期間，避免翻到第3張牌。
+    let firstCardIndex = null
+    let secondCardIndex = null
+
+    const TIMER_DURATION = 60 //秒(遊戲時間)
+    let timeRemaining = TIMER_DURATION 
+    let timerInterval; //用來儲存 setInterval 的 ID,clearInterval()會用到。
+    const timerDisplay = document.getElementById("timerDisplay")
+    const messageElement = document.getElementById("message")
+
+
+
+    //洗牌
+    function shuffleArray(array) {
+        for ( let i = array.length - 1 ; i > 0 ; i--) {
+            const j = Math.floor(Math.random() * ( i + 1 ) )
+            // 使用解構賦值電腦出現錯誤
+            // [array[i],array[j]] = [array[j],array[i]]
+            //使用傳統方式
+            const temp = array[i]; 
+            array[i] = array[j]; 
+            array[j] = temp; 
+        }
+        return array
+    }
     
+    // 遊戲牌的初始狀態
+    function initializeGame() {
+        //隨機牌 <note>使用[...cardSymbols]創建一個 全新的陣列副本，維持公平性 
+        const tempShuffled = shuffleArray([...cardSymbols]) 
+        //加入isFlipped、isMatched
+        shuffledSymbols = tempShuffled.map((symbol,index) => ({
+            index:index,
+            symbol:symbol,
+            isFlipped:false,//未掀牌
+            isMatched:false,//未配對
+        }))
+        //清除舊卡片
+        container.innerHTML = ''
+        //卡片狀態重設
+        resetTurn()
+        //渲染卡片
+        shuffledSymbols.forEach((cardData,index) => {
+            const cardElement = createCardElement(cardData.symbol,index)
+            container.appendChild(cardElement);
+
+        })
+    }
+
+    function createCardElement(symbol,index) {
+        const wrapper = document.createElement('div')
+        wrapper.className = 'card-wrapper'
+        wrapper.dataset.index = index
+
+        // 背面:?
+        const backFace = document.createElement('div')
+        backFace.className = 'card-face back-face'
+        backFace.textContent = '?'
+
+        //正面:圖案
+        const frontFace = document.createElement('div')
+        frontFace.className = 'card-face front-face' 
+        frontFace.innerHTML = symbol;
+
+        wrapper.appendChild(backFace)
+        wrapper.appendChild(frontFace)
+
+        return wrapper;
+
+    }
+    // 誰被點擊用index(設變數)、被點擊的資料內容、追蹤卡片翻牌沒翻牌狀態(設變數)
+    // 第1張牌和第2張牌配對
+    // 已配對的牌不能點擊 (設變數)、已經掀開的牌不能點擊 (設變數)  退出函式
+
+    function handleCardClick(event) {
+        const cardElement = event.target.closest(".card-wrapper") 
+        // 點擊到容器的間隙container的gap-4 會是null，就退出
+        if(!cardElement){
+            return;
+        }
+        const index = parseInt(cardElement.dataset.index)
+        const cardData = shuffledSymbols[index]
+
+        //檢查
+        if(isGameLocked || cardData.isFlipped || cardData.isMatched) {
+            return
+        }
+        //更新DOM和JavaScript數據
+        cardData.isFlipped = true
+        cardElement.classList.add("flipped")
+
+        //點擊邏輯
+        if( firstCardIndex === null ){
+            //這是第一張牌
+            firstCardIndex = index   
+            startTimer()
+
+        }else{
+            //這是第二張牌
+            secondCardIndex = index
+            isGameLocked = true
+
+            checkMatch()
+        } 
+    }
+    //取得資料 / 比較資料 / 執行成功或失敗 / 清理狀態
+    function checkMatch() {
+        //取得數據物件
+        const card1 = shuffledSymbols[firstCardIndex]
+        const card2 = shuffledSymbols[secondCardIndex]
+        //取得DOM元素
+        const card1Element = container.children[firstCardIndex]
+        const card2Element = container.children[secondCardIndex]
+
+        if (card1.symbol === card2.symbol) {
+            setTimeout(() => {
+                card1.isMatched = true
+                card2.isMatched = true 
+
+                card1Element.classList.add("matched")
+                card2Element.classList.add("matched")
+
+                //重置牌資料
+                resetTurn()
+                checkAllMatchedAndEnd()
+            },1000)
+            
+        } else {
+            setTimeout(() => {
+                //數據更新
+                card1.isFlipped = false
+                card2.isFlipped = false
+                //DOM更新
+                card1Element.classList.remove("flipped")
+                card2Element.classList.remove("flipped")
+
+                //重置牌資料
+                resetTurn()
+            },1000)
+        }
+      
+    }
+    //重置牌資料
+    function resetTurn() {
+        firstCardIndex = null
+        secondCardIndex = null
+        isGameLocked = false
+    }
+    //數據、視覺、終止條件(每秒發生的事情) 還沒寫完
+    function updateTimer() {
+        timeRemaining --;
+
+        if(timerDisplay) {
+            timerDisplay.textContent = `剩餘${timeRemaining}秒`;  
+            timerDisplay.className = "border rounded border-2 border-white p-2 bg-blue-800 text-white font-bold text-xl"
+        }
+        //牌都配對完成 ||
+        if(timeRemaining <= 0 ) {
+            isGameLocked = true
+            clearInterval(timerInterval)
+            messageElement.textContent = '挑戰失敗'
+            messageElement.classList.add("p-3")
+        }
+        
+    }
+    //啟動計時器
+    function startTimer() {
+        //有ID就清除(清除舊的計時器 )
+        if( timerInterval ) {
+            return
+        }
+        //重設時間(初始化)
+        timeRemaining = TIMER_DURATION
+        if(timerDisplay) {
+           timerDisplay.textContent = `剩餘${timeRemaining}秒`; 
+           timerDisplay.className = "border rounded border-2 border-white p-2 bg-blue-800 text-white font-bold text-xl"   
+        }
+        // 創建一個計時器
+        timerInterval = setInterval(updateTimer,1000)
+
+    }
+    //檢查所有配對並執行勝利函式
+    function checkAllMatchedAndEnd() {
+        const allMatched = shuffledSymbols.every(card => card.isMatched ) 
+
+        if(allMatched) {
+            //執行勝利函式
+            handleWin()
+            return true
+        }
+        return false
+
+    }
+    //勝利後的操作
+    function handleWin() {
+        //停止計時器
+        stopTimer()
+
+        if(messageElement) {
+            messageElement.textContent = '挑戰成功'
+            messageElement.classList.add("p-3")
+        }
+        isGameLocked = true
+    }
+    //遊戲成功時間暫停
+    function stopTimer() {
+        if(timerInterval) {
+            //取消重複任務，時間會暫停
+            clearInterval(timerInterval)
+        }
+    }
+    //重新開始
+    function resetGame() {
+        stopTimer()
+        timerInterval = null // 確保計時器 ID 被清除，讓 startTimer 可以再次啟動
+        
+        if(timerDisplay) {
+            timeRemaining = TIMER_DURATION; 
+            timerDisplay.textContent = `剩餘${timeRemaining}秒`;
+            timerDisplay.className = "border rounded border-2 border-white p-2 bg-blue-800 text-white font-bold text-xl" 
+        }
+
+        if(messageElement) {
+            messageElement.textContent = ''
+            messageElement.classList.remove("p-3")
+        }
+        
+        initializeGame()
+    } 
+
+
+    //在容器上綁定點擊事件
+    container.addEventListener("click",handleCardClick)
+    //綁定重新開始按鈕
+    document.getElementById('restartButton').addEventListener("click",resetGame)
+    //遊戲牌的初始狀態
+    initializeGame()
+
+</script>
 </body>
 </html>
