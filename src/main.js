@@ -4,9 +4,8 @@ import './style.css'
 import App from './App.vue'
 import memoryMatchGame from './vueTemplate/memoryMatchGame.vue'
 
-
 const routes = [
-    {path:'/',component:memoryMatchGame}
+    {path:'/',component:memoryMatchGame},
 ]
 
 const router = createRouter({

@@ -10,7 +10,7 @@
         </button>   
     </div>
     <div class="flex justify-center">
-        <div id="container" class="grid grid-cols-4 gap-4" v-if="showCards">
+        <div id="container" class="grid grid-cols-4 gap-4 w-full" v-if="showCards">
            <div 
             v-for="(cardData,index) in shuffledSymbols" 
             :key="index"
@@ -24,9 +24,9 @@
 
            >
                 <!-- 背面:? -->
-                <div class="card-face back-face">?</div>
+                <div class="card-face back-face text-4xl sm:text-2xl lg:text-4xl">?</div>
                 <!-- 正面:圖案 -->
-                <div class="card-face front-face">{{cardData.symbol}}</div>
+                <div class="card-face front-face text-4xl sm:text-2xl lg:text-4xl">{{cardData.symbol}}</div>
             
            </div>
         </div>
@@ -49,7 +49,7 @@ const secondCardIndex = ref(null)
 const timeRemaining = ref(60)//秒(遊戲時間)
 const timerInterval = ref(null); //用來儲存 setInterval 的 ID,clearInterval()會用到。
 const message = ref('')//訊息的顯示
-const showCards = ref(true);
+const showCards = ref(true);//控制卡片列表是否渲染
 //洗牌
 const shuffleArray = (array) => {
     for ( let i = array.length - 1 ; i > 0 ; i--) {
@@ -202,12 +202,10 @@ const resetGame = () => {
     timeRemaining.value = 60
     message.value = ''
 
-    showCards.value = false;
-    // initializeGame()  
+    showCards.value = false;//銷毀卡片 DOM
+    initializeGame() //立即替換數據（在 DOM 銷毀後，數據準備好）
+    //必須使用 nextTick 等待 DOM 銷毀完成
     nextTick(() => {
-        // 執行初始化，生成新的 shuffledSymbols 數據
-        initializeGame();
-        
         // 瞬間重建卡片 DOM
         showCards.value = true;
     });
@@ -220,8 +218,7 @@ onMounted(() => {
 </script>
 <style scoped>
 .card-wrapper {
-    width:100px;
-    height:100px;
+    aspect-ratio: 1 / 1; /* 寬:高=1:1 */
     position:relative;
     transform-style:preserve-3d;
     transition:transform 0.5s;
@@ -246,7 +243,7 @@ onMounted(() => {
     align-items:center;
     justify-content:center;
     border-radius:8px;
-    font-size:40px;
+    
     font-weight:bold;
 }  
 /* 卡片背面顏色 */
